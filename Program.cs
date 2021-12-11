@@ -115,8 +115,14 @@ namespace TeslaChargingManager
 
             Tesla.VehicleModel? vehicle = null;
             var distance = int.MaxValue;
+            var asleep = false;
             foreach(var v in vehicles.response)
             {
+                if (v.state == "asleep")
+                {
+                    asleep = true;
+                    continue;
+                }
                 var driveState = await TeslaService.DriveState(v.id);
                 var d = CalculateDistance(driveState.location, pulseSite.location);
                 if (d < 100)
@@ -134,7 +140,8 @@ namespace TeslaChargingManager
             }
             if (vehicle == null)
             {
-                Console.WriteLine($"No Tesla vehicles found within 100m of {pulseSite.address}. Closest is {distance}m");
+                if (asleep == true && distance == int.MaxValue) Console.WriteLine($"No Tesla vehicles found awake.");
+                else Console.WriteLine($"No Tesla vehicles found within 100m of {pulseSite.address}. Closest is {distance}m");
                 isInChargingLoop = false;
                 return;
             }
