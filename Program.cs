@@ -97,7 +97,7 @@ namespace TeslaChargingManager
             var pulseSite = PulseService.GetSite(siteId);
             var pulseData = PulseService.GetLiveSummary(siteId);
             Console.WriteLine($"Current conditions is {pulseData.weather.temperature}c and {pulseData.weather.description}");
-            Console.WriteLine($"Current solar production is {pulseData.solar}kw");
+            Console.WriteLine($"Current solar production is {pulseData.solar}kW");
 
             if (pulseData.solar <= 0 || !pulseData.weather.daytime)
             {
@@ -154,6 +154,8 @@ namespace TeslaChargingManager
 
             var sustainedDrawDuration = 0;
             var notChargingDuration = 0;
+            var statsDuration = 600;
+            var loopDuration = 20;
             while (true)
             {
                 if (token.IsCancellationRequested) break;
@@ -161,7 +163,7 @@ namespace TeslaChargingManager
                 pulseData = PulseService.GetLiveSummary(siteId);
                 var grid = pulseData.grid;
 
-                Console.WriteLine($"Grid ({DateTime.Now:s}): {grid}");
+                Console.WriteLine($"{DateTime.Now:s}  Grid:{grid} Solar:{pulseData.solar}");
 
                 var sustainedDraw = false;
 
@@ -185,6 +187,7 @@ namespace TeslaChargingManager
                             sustainedDraw = true;
                         }
                     }
+                    loopDuration = 20;
                 }
                 else 
                 {
@@ -195,9 +198,15 @@ namespace TeslaChargingManager
                         isInChargingLoop = false;
                         break;
                     }
+                    if (increaseChargeBy == 0)
+                    {
+                        loopDuration += 20;
+                        if (loopDuration > appSettings.MaxLoopSleepDuration) loopDuration = appSettings.MaxLoopSleepDuration;
+                    }
+                    else loopDuration = 20;
                 }
 
-                sustainedDrawDuration = sustainedDraw ? sustainedDrawDuration += appSettings.LoopSleepDuration : 0;
+                sustainedDrawDuration = sustainedDraw ? sustainedDrawDuration += loopDuration : 0;
                 if (sustainedDrawDuration >= appSettings.SustainedDrawDuration)
                 {
                     await TeslaService.StopCharging($"grid draw over grid sustained draw limit of {appSettings.GridMaxSustainedDraw} for {sustainedDrawDuration} seconds");
@@ -207,7 +216,7 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Sustained draw {sustainedDrawDuration}/{appSettings.SustainedDrawDuration}");
                 }
 
-                notChargingDuration = TeslaService.chargeState.charging_state == "Charging" ? 0 : notChargingDuration += appSettings.LoopSleepDuration;
+                notChargingDuration = TeslaService.chargeState.charging_state == "Charging" ? 0 : notChargingDuration += loopDuration;
                 if (notChargingDuration >= appSettings.NotChargingDuration)
                 {
                     Console.WriteLine($"Not charging duration limit of {appSettings.NotChargingDuration} reached.");
@@ -219,7 +228,17 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Not charging duration {notChargingDuration}/{appSettings.NotChargingDuration}");
                 }
 
-                Thread.Sleep(appSettings.LoopSleepDuration * 1000);
+                if (statsDuration >= 600)
+                {
+                    Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level}/{TeslaService.chargeState.charge_limit_soc}");
+                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.battery_range * (TeslaService.chargeState.charge_limit_soc / TeslaService.chargeState.battery_level))}");
+                    Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kW");
+                    Console.WriteLine($"Time to full charge is {TeslaService.chargeState.time_to_full_charge} hours");
+                    statsDuration = 0;
+                }
+                else statsDuration += loopDuration;
+
+                Thread.Sleep(loopDuration * 1000);
             }
         }
 

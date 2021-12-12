@@ -50,7 +50,7 @@ namespace TeslaChargingManager
                 }
                 else
                 {
-                    Console.WriteLine($"Charging not starting as available power {Math.Round(powerDelta * -1000)} is less than minimum of {appSettings.MinimumPowerToStartCharging}");
+                    Console.WriteLine($"Charging not starting as available power {Math.Round(powerDelta * -1000)}w is less than minimum of {appSettings.MinimumPowerToStartCharging}w");
                     return 0;
                 }
             }

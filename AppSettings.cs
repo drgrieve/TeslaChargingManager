@@ -15,7 +15,7 @@ namespace TeslaChargingManager
         public string PulseUrl { get; set; }
 
         //Charging logic
-        public int LoopSleepDuration { get; set; }
+        public int MaxLoopSleepDuration { get; set; }
         public double GridBuffer { get; set; }
         public double GridMaxDraw { get; set; }
         public double GridMaxSustainedDraw { get; set; }
