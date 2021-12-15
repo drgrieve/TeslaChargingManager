@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using RestSharp;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web;
@@ -93,6 +94,12 @@ namespace TeslaChargingManager
             PulseService.Init(appSettings);
 
             var pulseUser = PulseService.GetUser();
+            if (pulseUser.user_id == 0)
+            {
+                Console.WriteLine("Pulse is not currently available");
+                isInChargingLoop = false;
+                return;
+            }
             var siteId = pulseUser.site_ids.First();
             var pulseSite = PulseService.GetSite(siteId);
             var pulseData = PulseService.GetLiveSummary(siteId);
@@ -152,24 +159,34 @@ namespace TeslaChargingManager
 
             Console.WriteLine("Press ESC to stop monitoring");
 
+            var timer = new Stopwatch();
             var sustainedDrawDuration = 0;
             var notChargingDuration = 0;
             var statsDuration = 600;
-            var loopDuration = 20;
+            var loopDuration = appSettings.MinLoopSleepDuration;
+            var stableDrawDuration = 0;
+            var gridBuffer = appSettings.GridBuffer;
             while (true)
             {
                 if (token.IsCancellationRequested) break;
 
                 pulseData = PulseService.GetLiveSummary(siteId);
+                if (pulseData.grid == 0 && pulseData.consumption == 0 && pulseData.solar == 0)
+                {
+                    Console.WriteLine($"{DateTime.Now:s} Pulse data not available.");
+                    Thread.Sleep(appSettings.MinLoopSleepDuration);
+                    continue;
+                }
+
                 var grid = pulseData.grid;
 
-                Console.WriteLine($"{DateTime.Now:s}  Grid:{grid} Solar:{pulseData.solar}");
+                Console.WriteLine($"{DateTime.Now:s} Solar:{pulseData.solar:N2} Home:{pulseData.consumption:N2} Grid:{grid:N2} Buffer:{gridBuffer:N2}");
 
                 var sustainedDraw = false;
 
-                if (grid + appSettings.GridBuffer > 0)
+                if (grid + gridBuffer > 0)
                 {
-                    var reducedChargeBy = await TeslaService.ChargeDelta(grid + appSettings.GridBuffer);
+                    var reducedChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, pulseData.consumption);
                     if (Double.IsNaN(reducedChargeBy))
                     {
                         Console.WriteLine("Monitor stopped due to failure.");
@@ -187,11 +204,13 @@ namespace TeslaChargingManager
                             sustainedDraw = true;
                         }
                     }
-                    loopDuration = 20;
+                    loopDuration = TeslaService.chargeState.charging_state == "Charging" ? appSettings.MinLoopSleepDuration : appSettings.MaxLoopSleepDuration;
+                    stableDrawDuration = 0;
+                    gridBuffer = appSettings.GridBuffer;
                 }
                 else 
                 {
-                    var increaseChargeBy = await TeslaService.ChargeDelta(grid + appSettings.GridBuffer);
+                    var increaseChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, pulseData.consumption);
                     if (Double.IsNaN(increaseChargeBy))
                     {
                         Console.WriteLine("Monitor stopped due to failure.");
@@ -200,13 +219,25 @@ namespace TeslaChargingManager
                     }
                     if (increaseChargeBy == 0)
                     {
-                        loopDuration += 20;
+                        stableDrawDuration += loopDuration;
+                        if (stableDrawDuration > 60 && gridBuffer > appSettings.GridMinBuffer)
+                        {
+                            stableDrawDuration = 0;
+                            gridBuffer = Math.Round(gridBuffer - 0.05, 2);
+                        }
+                        loopDuration += appSettings.MinLoopSleepDuration;
                         if (loopDuration > appSettings.MaxLoopSleepDuration) loopDuration = appSettings.MaxLoopSleepDuration;
                     }
-                    else loopDuration = 20;
+                    else
+                    {
+                        loopDuration = appSettings.MinLoopSleepDuration;
+                        stableDrawDuration = 0;
+                    }
                 }
 
-                sustainedDrawDuration = sustainedDraw ? sustainedDrawDuration += loopDuration : 0;
+                var seconds = (int)Math.Round(timer.Elapsed.TotalSeconds);
+                timer.Restart();
+                sustainedDrawDuration = sustainedDraw ? sustainedDrawDuration += seconds : 0;
                 if (sustainedDrawDuration >= appSettings.SustainedDrawDuration)
                 {
                     await TeslaService.StopCharging($"grid draw over grid sustained draw limit of {appSettings.GridMaxSustainedDraw} for {sustainedDrawDuration} seconds");
@@ -216,7 +247,7 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Sustained draw {sustainedDrawDuration}/{appSettings.SustainedDrawDuration}");
                 }
 
-                notChargingDuration = TeslaService.chargeState.charging_state == "Charging" ? 0 : notChargingDuration += loopDuration;
+                notChargingDuration = TeslaService.chargeState.charging_state == "Charging" ? 0 : notChargingDuration += seconds;
                 if (notChargingDuration >= appSettings.NotChargingDuration)
                 {
                     Console.WriteLine($"Not charging duration limit of {appSettings.NotChargingDuration} reached.");
@@ -231,14 +262,15 @@ namespace TeslaChargingManager
                 if (statsDuration >= 600)
                 {
                     Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level}/{TeslaService.chargeState.charge_limit_soc}");
-                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.battery_range * (TeslaService.chargeState.charge_limit_soc / TeslaService.chargeState.battery_level))}");
-                    Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kW");
+                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.est_battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.est_battery_range * 100 / TeslaService.chargeState.battery_level)}");
+                    Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kWh");
                     Console.WriteLine($"Time to full charge is {TeslaService.chargeState.time_to_full_charge} hours");
                     statsDuration = 0;
                 }
-                else statsDuration += loopDuration;
+                else statsDuration += seconds;
 
-                Thread.Sleep(loopDuration * 1000);
+                var sleep = loopDuration - seconds < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
+                Thread.Sleep((sleep) * 1000);
             }
         }
 

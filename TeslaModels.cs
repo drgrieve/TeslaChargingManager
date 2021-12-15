@@ -9,12 +9,19 @@ namespace TeslaChargingManager.Tesla
     public class GenericResponse
     {
         public GenericResult response { get; set; }
+        public GenericError error { get; set; }
     }
 
     public class GenericResult
     {
         public string reason { get; set; }
         public bool result { get; set; }
+    }
+
+    public class GenericError
+    {
+        public string error { get; set; }
+        public string error_description { get; set; }
     }
 
     public class VehicleModel
