@@ -197,7 +197,7 @@ namespace TeslaChargingManager
                     {
                         if (grid > appSettings.GridMaxDraw && TeslaService.chargeState.charging_state == "Charging")
                         {
-                            await TeslaService.StopCharging($"grid draw over grid draw max of {appSettings.GridMaxDraw}");
+                            await TeslaService.StopCharging($"grid draw {grid} is over grid draw max of {appSettings.GridMaxDraw}");
                         }
                         else if (grid > appSettings.GridMaxSustainedDraw && TeslaService.chargeState.charging_state == "Charging")
                         {
@@ -262,7 +262,7 @@ namespace TeslaChargingManager
                 if (statsDuration >= 600)
                 {
                     Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level}/{TeslaService.chargeState.charge_limit_soc}");
-                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.est_battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.est_battery_range * 100 / TeslaService.chargeState.battery_level)}");
+                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.ideal_battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.ideal_battery_range * 100 / TeslaService.chargeState.battery_level)}");
                     Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kWh");
                     Console.WriteLine($"Time to full charge is {TeslaService.chargeState.time_to_full_charge} hours");
                     statsDuration = 0;
