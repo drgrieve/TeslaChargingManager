@@ -69,7 +69,7 @@ namespace TeslaChargingManager.Tesla
         public int charger_pilot_current { get; set; }
         public int charger_power { get; set; }
         public int charger_voltage { get; set; }
-        public ChargingState charging_state { get; set; }
+        public ChargingState? charging_state { get; set; }
         public string conn_charge_cable { get; set; }
         public double est_battery_range { get; set; }
         public string fast_charger_brand { get; set; }
@@ -95,7 +95,8 @@ namespace TeslaChargingManager.Tesla
     {
         Charging = 1,
         Disconnected,
-        Stopped
+        Stopped,
+        Complete
     }
 
     public class ChargeStateResponse

@@ -18,8 +18,11 @@ namespace TeslaChargingManager
         internal static void Init(AppSettings _appSettings)
         {
             appSettings = _appSettings;
-            teslaClient = new RestClient("https://owner-api.teslamotors.com");
-            teslaClient.AddDefaultHeader("Authorization", $"Bearer {appSettings.TeslaAccessToken}");
+            if (teslaClient == null)
+            {
+                teslaClient = new RestClient("https://owner-api.teslamotors.com");
+                teslaClient.AddDefaultHeader("Authorization", $"Bearer {appSettings.TeslaAccessToken}");
+            }
         }
 
 
@@ -49,15 +52,15 @@ namespace TeslaChargingManager
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}.");
 
-                if (chargeState.battery_level >= appSettings.MaximumStateOfCharge)
+                if (chargeState.battery_level >= chargeState.charge_limit_soc - 1)
                 {
-                    Console.WriteLine($"Monitoring stopped as {chargeState.battery_level} has reached or exceeded {appSettings.MaximumStateOfCharge}");
+                    Console.WriteLine($"Monitoring stopped as {chargeState.battery_level} has reached or exceeded {chargeState.charge_limit_soc - 1}");
                     return double.NaN;
                 }
 
                 if (powerDelta * 1000 + appSettings.MinimumPowerToStartCharging < 0)
                 {
-                    Console.WriteLine($"Starting charging as battery level {chargeState.battery_level} is less than {appSettings.MaximumStateOfCharge}");
+                    Console.WriteLine($"Starting charging as battery level {chargeState.battery_level} is less than {chargeState.charge_limit_soc - 1}");
                     var result = await TeslaService.StartCharging();
                     return result ? 0 : double.NaN;
                 }
@@ -98,14 +101,14 @@ namespace TeslaChargingManager
             }
             else
             {
-                if (chargeState.charger_actual_current < appSettings.MaximumChargingAmps)
+                if (chargeState.charger_actual_current < chargeState.charge_current_request_max)
                 {
                     var amps = GetAmps(powerDelta * -1, chargeState);
                     if (amps > 0)
                     {
                         amps = AdjustAmps(amps, appSettings.RampUpPercentage);
                         amps = chargeState.charger_actual_current + amps;
-                        if (amps > appSettings.MaximumChargingAmps) amps = appSettings.MaximumChargingAmps;
+                        if (amps > chargeState.charge_current_request_max) amps = chargeState.charge_current_request_max;
                         else if (amps < appSettings.MinimumChargingAmps) amps = appSettings.MinimumChargingAmps;
                         await SetVehicleChargingAmps(amps);
                         return amps;
@@ -127,7 +130,7 @@ namespace TeslaChargingManager
             return newAmps == 0 ? amps : newAmps;
         }
 
-        private static async Task ChargeState()
+        internal static async Task ChargeState()
         {
             var response = await teslaClient.GetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
             chargeState = response.response;
@@ -195,6 +198,21 @@ namespace TeslaChargingManager
             return state.response;
         }
 
+        internal static async Task SetChargeLimitIfLower(int percentage)
+        {
+            if (chargeState == null) await ChargeState();
 
+            if (percentage > chargeState.charge_limit_soc)
+            {
+                await SetChargeLimit(percentage);
+            }
+        }
+
+        private static async Task SetChargeLimit(int percentage)
+        {
+            var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/set_charge_limit", Method.POST);
+            request.AddJsonBody(new { percent = percentage });
+            var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
+        }
     }
 }

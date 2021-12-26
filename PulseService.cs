@@ -16,6 +16,7 @@ namespace TeslaChargingManager
         private static string accessToken;
         private static AppSettings appSettings;
         private static RestClient client;
+        internal static int SiteId { get; set; }
 
         internal static void Init(AppSettings _appSettings)
         {
@@ -56,18 +57,18 @@ namespace TeslaChargingManager
             return pulseResponse.Data;
         }
 
-        internal static SiteModel GetSite(int siteId)
+        internal static SiteModel GetSite()
         {
             RefreshAccessToken();
-            var pulseRequest = new RestRequest($"prod/v1/sites/{siteId}");
+            var pulseRequest = new RestRequest($"prod/v1/sites/{SiteId}");
             var pulseResponse = client.Get<SiteModel>(pulseRequest);
             return pulseResponse.Data;
         }
 
-        internal static SummaryModel GetLiveSummary(int siteId)
+        internal static SummaryModel GetLiveSummary()
         {
             RefreshAccessToken();
-            var pulseRequest = new RestRequest($"prod/v1/sites/{siteId}/live_data_summary");
+            var pulseRequest = new RestRequest($"prod/v1/sites/{SiteId}/live_data_summary");
             var pulseResponse = client.Get<SummaryModel>(pulseRequest);
             return pulseResponse.Data;
         }
