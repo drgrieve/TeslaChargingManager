@@ -14,11 +14,13 @@ namespace TeslaChargingManager
         public string PulseRefreshToken { get; set; }
         public string PulseUrl { get; set; }
 
+        //Charge curve
+        public string DefaultChargeCurve { get; set; }
+        public List<ChargeCurve> ChargeCurves { get; set; }
+
         //Charging logic
         public int MinLoopSleepDuration { get; set; }
         public int MaxLoopSleepDuration { get; set; }
-        public double GridBuffer { get; set; }
-        public double GridMinBuffer { get; set; }
         public double GridMaxDraw { get; set; }
         public double GridMaxSustainedDraw { get; set; }
         public int SustainedDrawDuration { get; set; }
@@ -31,5 +33,17 @@ namespace TeslaChargingManager
         public int MinimumStateOfCharge { get; set; }
         public int MaximumStateOfCharge { get; set; }
 
+    }
+
+    public class ChargeCurve
+    {
+        public string Name { get; set; }
+        public List<ChargePoint> Points { get; set; }
+    }
+
+    public class ChargePoint
+    {
+        public int SOC { get; set; }
+        public double Buffer { get; set; }
     }
 }

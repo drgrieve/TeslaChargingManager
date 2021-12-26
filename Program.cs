@@ -27,12 +27,15 @@ namespace TeslaChargingManager
             bool quitNow = false;
             while (!quitNow)
             {
-                var command = Console.ReadLine();
+                var command = (Console.ReadLine() ?? String.Empty).ToLower();
+                var options = command.Split(' ');
+                if (options.Length > 0) command = options[0];
                 switch (command)
                 {
                     case "/help":
                         Console.WriteLine("/login = Instructions to generate a new Tesla Access token");
                         Console.WriteLine("/charge = Charge vehicle with excess solar");
+                        Console.WriteLine("/trip = Charge vehicle for an upcoming trip");
                         Console.WriteLine("/quit = Exit program");
                         break;
 
@@ -41,7 +44,21 @@ namespace TeslaChargingManager
                         break;
 
                     case "/charge":
-                        await Charge();
+                        var curve = options.Length == 1 ? appSettings.DefaultChargeCurve : options[1];
+                        await Charge(curve);
+                        break;
+
+                    case "/trip":
+                        if (options.Length != 3)
+                        {
+                            Console.WriteLine("Enter number of hours until departure and required SOC in percent. eg /trip 5 75");
+                        }
+                        else
+                        {
+                            var hours = Convert.ToInt32(options[1]);
+                            var percentage = Convert.ToInt32(options[2]);
+                            await Trip(hours, percentage);
+                        }
                         break;
 
                     case "/quit":
@@ -56,10 +73,82 @@ namespace TeslaChargingManager
 
         }
 
+        private const double MilesToKilometres = 1.609344;
+        private static async Task Trip(int hours, int percentage)
+        {
+            Console.WriteLine($"Charging Tesla from Solar for an upcoming trip in {hours} with required percentage SOC of {percentage}");
+
+            if (String.IsNullOrEmpty(appSettings.TeslaAccessToken))
+            {
+                Console.WriteLine("No Tesla token. Use /login");
+                return;
+            }
+            if (String.IsNullOrEmpty(appSettings.PulseRefreshToken))
+            {
+                Console.WriteLine("No Pulse token.");
+                return;
+            }
+
+            var chargeCurve = appSettings.ChargeCurves.Where(x => x.Name == "Solar+").FirstOrDefault();
+            if (chargeCurve == null)
+            {
+                Console.WriteLine($"Solar+ charge curve not found");
+                return;
+            }
+
+            //Stage 1 => Charge with Solar+ curve
+            //Stage 2 => Charge at max rate
+            //Stage 3 => Charge with Solar curve
+
+            cts = new CancellationTokenSource();
+            await Task.Run(() => ChargeLoop(chargeCurve, cts.Token));   //Stage 1
+
+            var tripStart = DateTime.Now.AddHours(hours).AddMinutes(-5);
+            var duration = 6000;
+            isInChargingLoop = true;
+            while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape) && isInChargingLoop)
+            {
+                if (duration >= 6000 && TeslaService.chargeState != null)
+                {
+                    if (chargeCurve?.Name == "Solar+")
+                    {
+                        var remainingTime = tripStart - DateTime.Now;
+                        var remainingMinutes = remainingTime.TotalMinutes > 0 ? remainingTime.TotalMinutes : 0;
+                        if (remainingMinutes > 0)
+                        {
+                            var minutesToFullCharge = TeslaService.chargeState.minutes_to_full_charge * percentage / TeslaService.chargeState.charge_limit_soc_max * TeslaService.chargeState.charger_power / TeslaService.MaxPower();
+                            if (minutesToFullCharge > remainingMinutes) //Stage 2
+                            {
+                                cts.Cancel();
+                                chargeCurve = null;
+                                await TeslaService.SetVehicleChargingAmps(TeslaService.chargeState.charge_current_request_max);
+                            }
+                        }                          
+                    }
+                    //Stage 3
+                    if (TeslaService.chargeState.battery_level >= percentage && chargeCurve?.Name != "Solar")
+                    {
+                        cts.Cancel();
+                        chargeCurve = appSettings.ChargeCurves.Where(x => x.Name == "Solar").FirstOrDefault();
+                        if (chargeCurve == null)
+                        {
+                            Console.WriteLine($"Solar charge curve not found");
+                            return;
+                        }
+                        cts = new CancellationTokenSource();
+                        await Task.Run(() => ChargeLoop(chargeCurve, cts.Token));
+                    }
+                }
+                Thread.Sleep(500);
+            }
+            cts.Cancel();
+            Console.WriteLine("Charge monitoring has stopped");
+        }
+
         private static CancellationTokenSource cts;
         private static bool isInChargingLoop;
 
-        static async Task Charge()
+        private static async Task Charge(string chargeCurveName)
         {
             Console.WriteLine("Charging Tesla from Solar");
 
@@ -73,11 +162,17 @@ namespace TeslaChargingManager
                 Console.WriteLine("No Pulse token.");
                 return;
             }
+            var chargeCurve = appSettings.ChargeCurves.FirstOrDefault(x => x.Name == chargeCurveName);
+            if (chargeCurve == null)
+            {
+                Console.WriteLine($"Charge curve {chargeCurveName} not found");
+                return;
+            }
 
             cts = new CancellationTokenSource();
             var token = cts.Token;
 
-            await Task.Run(() => ChargeLoop(token));
+            await Task.Run(() => ChargeLoop(chargeCurve, token));
 
             isInChargingLoop = true;
             while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape) && isInChargingLoop)
@@ -88,7 +183,7 @@ namespace TeslaChargingManager
             Console.WriteLine("Charge monitoring has stopped");
         }
 
-        static async void ChargeLoop(CancellationToken token)
+        private static async void ChargeLoop(ChargeCurve chargeCurve, CancellationToken token)
         {
             TeslaService.Init(appSettings);
             PulseService.Init(appSettings);
@@ -157,7 +252,7 @@ namespace TeslaChargingManager
 
             TeslaService.SetVehicleId(vehicle.id);
 
-            Console.WriteLine("Press ESC to stop monitoring");
+            Console.WriteLine($"Using charge curve {chargeCurve.Name}. Press ESC to stop monitoring");
 
             var timer = new Stopwatch();
             var sustainedDrawDuration = 0;
@@ -165,13 +260,19 @@ namespace TeslaChargingManager
             var statsDuration = 600;
             var loopDuration = appSettings.MinLoopSleepDuration;
             var stableDrawDuration = 0;
-            var gridBuffer = appSettings.GridBuffer;
+            var gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
+
+            //if (gridBuffer == appSettings.GridBufferLowSOC)
+            //{
+            //    Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level} is below minimum of {appSettings.MinimumStateOfCharge}. Low SOC grid buffer is being used");
+            //}
+
             while (true)
             {
                 if (token.IsCancellationRequested) break;
 
                 pulseData = PulseService.GetLiveSummary(siteId);
-                if (pulseData.grid == 0 && pulseData.consumption == 0 && pulseData.solar == 0)
+                if (pulseData == null || pulseData.grid == 0 && pulseData.consumption == 0 && pulseData.solar == 0)
                 {
                     Console.WriteLine($"{DateTime.Now:s} Pulse data not available.");
                     Thread.Sleep(appSettings.MinLoopSleepDuration);
@@ -206,7 +307,7 @@ namespace TeslaChargingManager
                     }
                     loopDuration = TeslaService.chargeState.charging_state == "Charging" ? appSettings.MinLoopSleepDuration : appSettings.MaxLoopSleepDuration;
                     stableDrawDuration = 0;
-                    gridBuffer = appSettings.GridBuffer;
+                    gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
                 }
                 else 
                 {
@@ -220,10 +321,10 @@ namespace TeslaChargingManager
                     if (increaseChargeBy == 0)
                     {
                         stableDrawDuration += loopDuration;
-                        if (stableDrawDuration > 60 && gridBuffer > appSettings.GridMinBuffer)
+                        if (stableDrawDuration > 60 && gridBuffer > (await TeslaService.GetGridBuffer(chargeCurve)) / 2)
                         {
                             stableDrawDuration = 0;
-                            gridBuffer = Math.Round(gridBuffer - 0.05, 2);
+                            gridBuffer = Math.Round(gridBuffer > 0 ? gridBuffer - 0.05 : gridBuffer + 0.05, 2);
                         }
                         loopDuration += appSettings.MinLoopSleepDuration;
                         if (loopDuration > appSettings.MaxLoopSleepDuration) loopDuration = appSettings.MaxLoopSleepDuration;
@@ -262,7 +363,7 @@ namespace TeslaChargingManager
                 if (statsDuration >= 600)
                 {
                     Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level}/{TeslaService.chargeState.charge_limit_soc}");
-                    Console.WriteLine($"Range {Math.Round(1.609344 * TeslaService.chargeState.ideal_battery_range)}/{Math.Round(1.609344 * TeslaService.chargeState.ideal_battery_range * 100 / TeslaService.chargeState.battery_level)}");
+                    Console.WriteLine($"Range {Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range)}/{Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range * 100 / TeslaService.chargeState.battery_level)} km");
                     Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kWh");
                     Console.WriteLine($"Time to full charge is {TeslaService.chargeState.time_to_full_charge} hours");
                     statsDuration = 0;
@@ -274,7 +375,7 @@ namespace TeslaChargingManager
             }
         }
 
-        static void Login()
+        private static void Login()
         {
             //Console.WriteLine($"To login you will need to enter your Tesla Email and Password.{Environment.NewLine}A token that is valid for 45 days will be displayed.{Environment.NewLine}Copy and enter this token into the appSettings.json file.");
             //Console.WriteLine("Enter email");
@@ -383,7 +484,7 @@ namespace TeslaChargingManager
             Console.WriteLine($"{Environment.NewLine}Copy and enter this token into the appSettings.json file.{Environment.NewLine}{ownerToken}");
         }
 
-        static string ComputeSha256Hash(string rawData)
+        private static string ComputeSha256Hash(string rawData)
         {
             // Create a SHA256   
             using (SHA256 sha256Hash = SHA256.Create())
@@ -401,7 +502,7 @@ namespace TeslaChargingManager
             }
         }
 
-        static string RandomAlpaNumericString(int length)
+        private static string RandomAlpaNumericString(int length)
         {
             var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
             var stringChars = new char[length];
@@ -415,7 +516,7 @@ namespace TeslaChargingManager
             return new String(stringChars);
         }
 
-        static double CalculateDistance(Location point1, Location point2)
+        private static double CalculateDistance(Location point1, Location point2)
         {
             var d1 = point1.Latitude * (Math.PI / 180.0);
             var num1 = point1.Longitude * (Math.PI / 180.0);
