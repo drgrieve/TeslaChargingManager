@@ -20,7 +20,7 @@ namespace TeslaChargingManager
         internal static void Init(AppSettings _appSettings)
         {
             appSettings = _appSettings;
-            client = new RestClient(appSettings.PulseUrl);
+            if (client == null) client = new RestClient(appSettings.PulseUrl);
             RefreshAccessToken();
         }
 

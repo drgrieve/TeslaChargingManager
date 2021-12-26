@@ -39,13 +39,13 @@ namespace TeslaChargingManager
                 return double.NaN;
             }
 
-            if (chargeState.charging_state == "Disconnected")
+            if (chargeState.charging_state == ChargingState.Disconnected)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}");
                 return double.NaN;
             }
 
-            if (chargeState.charging_state == "Stopped")
+            if (chargeState.charging_state == ChargingState.Stopped)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}.");
 
@@ -68,7 +68,7 @@ namespace TeslaChargingManager
                 }
             }
 
-            if (chargeState.charging_state != "Charging")
+            if (chargeState.charging_state != ChargingState.Charging)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}");
                 return double.NaN;
@@ -133,7 +133,7 @@ namespace TeslaChargingManager
             chargeState = response.response;
         }
 
-        private static async Task SetVehicleChargingAmps(int amps)
+        internal static async Task SetVehicleChargingAmps(int amps)
         {
             Console.WriteLine($"Charging changed to: {amps} amps");
             var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/set_charging_amps");
@@ -146,7 +146,7 @@ namespace TeslaChargingManager
         internal static async Task StopCharging(string reason)
         {
             Console.WriteLine($"Stopping charging due to {reason}");
-            if (chargeState.charging_state != "Charging")
+            if (chargeState.charging_state != ChargingState.Charging)
             {
                 Console.WriteLine($"Charging not stopped as vehicle is currently in state {chargeState.charging_state}.");
             }

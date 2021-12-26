@@ -76,7 +76,7 @@ namespace TeslaChargingManager
         private const double MilesToKilometres = 1.609344;
         private static async Task Trip(int hours, int percentage)
         {
-            Console.WriteLine($"Charging Tesla from Solar for an upcoming trip in {hours} with required percentage SOC of {percentage}");
+            Console.WriteLine($"Charging Tesla from Solar for an upcoming trip in {hours} hours with required percentage SOC of {percentage}");
 
             if (String.IsNullOrEmpty(appSettings.TeslaAccessToken))
             {
@@ -100,23 +100,25 @@ namespace TeslaChargingManager
             //Stage 2 => Charge at max rate
             //Stage 3 => Charge with Solar curve
 
+            isInChargingLoop = true;
             cts = new CancellationTokenSource();
-            await Task.Run(() => ChargeLoop(chargeCurve, cts.Token));   //Stage 1
+            await Task.Run(() => ChargeLoop(chargeCurve, cts.Token, preventStopCharge: true));   //Stage 1
 
             var tripStart = DateTime.Now.AddHours(hours).AddMinutes(-5);
-            var duration = 6000;
-            isInChargingLoop = true;
+            var duration = 5000;
             while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape) && isInChargingLoop)
             {
                 if (duration >= 6000 && TeslaService.chargeState != null)
                 {
+                    if (TeslaService.chargeState.charging_state != Tesla.ChargingState.Charging && chargeCurve == null)
+                        break;
                     if (chargeCurve?.Name == "Solar+")
                     {
                         var remainingTime = tripStart - DateTime.Now;
                         var remainingMinutes = remainingTime.TotalMinutes > 0 ? remainingTime.TotalMinutes : 0;
-                        if (remainingMinutes > 0)
+                        if (remainingMinutes > 0 && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging)
                         {
-                            var minutesToFullCharge = TeslaService.chargeState.minutes_to_full_charge * percentage / TeslaService.chargeState.charge_limit_soc_max * TeslaService.chargeState.charger_power / TeslaService.MaxPower();
+                            var minutesToFullCharge = 1.0 * TeslaService.chargeState.minutes_to_full_charge * percentage / TeslaService.chargeState.charge_limit_soc_max * TeslaService.chargeState.charge_current_request / TeslaService.chargeState.charge_current_request_max;
                             if (minutesToFullCharge > remainingMinutes) //Stage 2
                             {
                                 cts.Cancel();
@@ -138,11 +140,13 @@ namespace TeslaChargingManager
                         cts = new CancellationTokenSource();
                         await Task.Run(() => ChargeLoop(chargeCurve, cts.Token));
                     }
+                    duration = 0;
                 }
+                duration += 500;
                 Thread.Sleep(500);
             }
             cts.Cancel();
-            Console.WriteLine("Charge monitoring has stopped");
+            Console.WriteLine("Trip monitoring has stopped");
         }
 
         private static CancellationTokenSource cts;
@@ -169,12 +173,12 @@ namespace TeslaChargingManager
                 return;
             }
 
+            isInChargingLoop = true;
             cts = new CancellationTokenSource();
             var token = cts.Token;
 
             await Task.Run(() => ChargeLoop(chargeCurve, token));
 
-            isInChargingLoop = true;
             while (!(Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.Escape) && isInChargingLoop)
             {
                 Thread.Sleep(500);
@@ -183,7 +187,7 @@ namespace TeslaChargingManager
             Console.WriteLine("Charge monitoring has stopped");
         }
 
-        private static async void ChargeLoop(ChargeCurve chargeCurve, CancellationToken token)
+        private static async void ChargeLoop(ChargeCurve chargeCurve, CancellationToken token, bool preventStopCharge = false)
         {
             TeslaService.Init(appSettings);
             PulseService.Init(appSettings);
@@ -296,16 +300,16 @@ namespace TeslaChargingManager
                     }
                     if (reducedChargeBy == 0)
                     {
-                        if (grid > appSettings.GridMaxDraw && TeslaService.chargeState.charging_state == "Charging")
+                        if (grid > appSettings.GridMaxDraw && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging && !preventStopCharge)
                         {
                             await TeslaService.StopCharging($"grid draw {grid} is over grid draw max of {appSettings.GridMaxDraw}");
                         }
-                        else if (grid > appSettings.GridMaxSustainedDraw && TeslaService.chargeState.charging_state == "Charging")
+                        else if (grid > appSettings.GridMaxSustainedDraw && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging)
                         {
                             sustainedDraw = true;
                         }
                     }
-                    loopDuration = TeslaService.chargeState.charging_state == "Charging" ? appSettings.MinLoopSleepDuration : appSettings.MaxLoopSleepDuration;
+                    loopDuration = TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging ? appSettings.MinLoopSleepDuration : appSettings.MaxLoopSleepDuration;
                     stableDrawDuration = 0;
                     gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
                 }
@@ -339,7 +343,7 @@ namespace TeslaChargingManager
                 var seconds = (int)Math.Round(timer.Elapsed.TotalSeconds);
                 timer.Restart();
                 sustainedDrawDuration = sustainedDraw ? sustainedDrawDuration += seconds : 0;
-                if (sustainedDrawDuration >= appSettings.SustainedDrawDuration)
+                if (sustainedDrawDuration >= appSettings.SustainedDrawDuration && !preventStopCharge)
                 {
                     await TeslaService.StopCharging($"grid draw over grid sustained draw limit of {appSettings.GridMaxSustainedDraw} for {sustainedDrawDuration} seconds");
                 }
@@ -348,7 +352,7 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Sustained draw {sustainedDrawDuration}/{appSettings.SustainedDrawDuration}");
                 }
 
-                notChargingDuration = TeslaService.chargeState.charging_state == "Charging" ? 0 : notChargingDuration += seconds;
+                notChargingDuration = TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging ? 0 : notChargingDuration += seconds;
                 if (notChargingDuration >= appSettings.NotChargingDuration)
                 {
                     Console.WriteLine($"Not charging duration limit of {appSettings.NotChargingDuration} reached.");
