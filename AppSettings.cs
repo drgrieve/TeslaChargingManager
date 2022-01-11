@@ -27,7 +27,6 @@ namespace TeslaChargingManager
         public int NotChargingDuration { get; set; }
         public double RampUpPercentage { get; set; }
         public double RampDownPercentage { get; set; }
-        public int MinimumPowerToStartCharging { get; set; }
         public int MinimumChargingAmps { get; set; }
         public int MinimumStateOfCharge { get; set; }
 

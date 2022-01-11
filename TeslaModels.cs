@@ -95,6 +95,7 @@ namespace TeslaChargingManager.Tesla
     {
         Charging = 1,
         Disconnected,
+        Starting,
         Stopped,
         Complete
     }

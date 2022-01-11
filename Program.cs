@@ -61,6 +61,17 @@ namespace TeslaChargingManager
                         }
                         break;
 
+                    case "/limit":
+                        if (options.Length != 2)
+                        {
+                            Console.WriteLine("Enter percentage limit. eg /limit 90");
+                        }
+                        else
+                        {
+                            var percentage = Convert.ToInt32(options[1]);
+                            await Limit(percentage);
+                        }
+                        break;
                     case "/quit":
                         quitNow = true;
                         break;
@@ -265,6 +276,7 @@ namespace TeslaChargingManager
             var loopDuration = appSettings.MinLoopSleepDuration;
             var stableDrawDuration = 0;
             var gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
+            var sleep = 0;
 
             //if (gridBuffer == appSettings.GridBufferLowSOC)
             //{
@@ -325,7 +337,7 @@ namespace TeslaChargingManager
                     if (increaseChargeBy == 0)
                     {
                         stableDrawDuration += loopDuration;
-                        if (stableDrawDuration > 60 && gridBuffer > await TeslaService.GetGridBuffer(chargeCurve)) / 2)
+                        if (stableDrawDuration > 60 && gridBuffer > await TeslaService.GetGridBuffer(chargeCurve) / 2)
                         {
                             stableDrawDuration = 0;
                             gridBuffer = Math.Round(gridBuffer > 0 ? gridBuffer - 0.05 : gridBuffer + 0.05, 2);
@@ -374,9 +386,17 @@ namespace TeslaChargingManager
                 }
                 else statsDuration += seconds;
 
-                var sleep = loopDuration - seconds < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
+                sleep = loopDuration - seconds + sleep < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
                 Thread.Sleep((sleep) * 1000);
             }
+        }
+
+
+        private static async Task Limit(int percentage)
+        {
+            TeslaService.Init(appSettings);
+            await TeslaService.SetChargeLimit(percentage);
+            Console.WriteLine($"Charge limit set to {percentage}");
         }
 
         private static void Login()

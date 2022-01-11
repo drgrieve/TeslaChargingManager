@@ -30,7 +30,7 @@ namespace TeslaChargingManager
         {
             if (powerDelta < 0 && chargeState != null)
             {
-                var amps = GetAmps(powerDelta * -1, chargeState);
+                var amps = GetAmps(powerDelta * -1);
                 if (amps == 0) return 0;
             }
 
@@ -41,7 +41,7 @@ namespace TeslaChargingManager
                 Console.WriteLine($"Charger is: not available");
                 return double.NaN;
             }
-
+             
             if (chargeState.charging_state == ChargingState.Disconnected)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}");
@@ -58,7 +58,8 @@ namespace TeslaChargingManager
                     return double.NaN;
                 }
 
-                if (powerDelta * 1000 + appSettings.MinimumPowerToStartCharging < 0)
+                var minimumPowerToStartCharging = (TeslaService.GetPowerPerAmp() ?? 0) * 1000 * appSettings.MinimumChargingAmps;
+                if (powerDelta * 1000 + minimumPowerToStartCharging < 0)
                 {
                     Console.WriteLine($"Starting charging as battery level {chargeState.battery_level} is less than {chargeState.charge_limit_soc - 1}");
                     var result = await TeslaService.StartCharging();
@@ -66,7 +67,7 @@ namespace TeslaChargingManager
                 }
                 else
                 {
-                    Console.WriteLine($"Charging not starting as available power {Math.Round(powerDelta * -1000)}w is less than minimum of {appSettings.MinimumPowerToStartCharging}w");
+                    Console.WriteLine($"Charging not starting as available power {Math.Round(powerDelta * -1000)}w is less than minimum of {minimumPowerToStartCharging}w");
                     return 0;
                 }
             }
@@ -79,7 +80,7 @@ namespace TeslaChargingManager
 
             Console.WriteLine($"Charging at: {chargeState.charger_actual_current} amps");
 
-            var consumptionAmps = GetAmps(consumption, chargeState);
+            var consumptionAmps = GetAmps(consumption);
             if (consumptionAmps < chargeState.charger_actual_current)
             {
                 Console.WriteLine($"Consumption in amps: {consumptionAmps} indicates charging is not ramped to indicated charge rate.");
@@ -90,7 +91,7 @@ namespace TeslaChargingManager
             {
                 if (chargeState.charger_actual_current > appSettings.MinimumChargingAmps)
                 {
-                    var amps = GetAmps(powerDelta, chargeState);
+                    var amps = GetAmps(powerDelta);
                     if (amps == 0) amps = 1;
                     amps = AdjustAmps(amps, appSettings.RampDownPercentage);
                     amps = chargeState.charger_actual_current - amps;
@@ -103,7 +104,7 @@ namespace TeslaChargingManager
             {
                 if (chargeState.charger_actual_current < chargeState.charge_current_request_max)
                 {
-                    var amps = GetAmps(powerDelta * -1, chargeState);
+                    var amps = GetAmps(powerDelta * -1);
                     if (amps > 0)
                     {
                         amps = AdjustAmps(amps, appSettings.RampUpPercentage);
@@ -118,9 +119,16 @@ namespace TeslaChargingManager
             return 0;
         }
 
-        private static int GetAmps(double power, ChargeStateModel chargeState)
+        private static double? powerPerAmp;
+        private static double? GetPowerPerAmp()
         {
-            var powerPerAmp = chargeState.charger_voltage * chargeState.charger_phases.GetValueOrDefault(1) / 1000.0;
+            if (chargeState.charger_voltage == 0 || chargeState.charger_phases == null) return powerPerAmp;
+            powerPerAmp = chargeState.charger_voltage * chargeState.charger_phases.GetValueOrDefault(1) / 1000.0;
+            return powerPerAmp;
+        }
+        private static int GetAmps(double power)
+        {
+            var powerPerAmp = GetPowerPerAmp().GetValueOrDefault(1);
             return (int)Math.Floor(power / powerPerAmp);
         }
 
@@ -132,8 +140,8 @@ namespace TeslaChargingManager
 
         internal static async Task ChargeState()
         {
-            var response = await teslaClient.GetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
-            chargeState = response.response;
+            var response = await teslaClient.ExecuteGetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
+            chargeState = response.Data.response;
         }
 
         internal static async Task SetVehicleChargingAmps(int amps)
@@ -142,6 +150,7 @@ namespace TeslaChargingManager
             var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/set_charging_amps");
             request.AddJsonBody(new { charging_amps = amps });
             var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
+            if (response.Data == null) Console.WriteLine($"Failed to set charging amps: {response.Content}");
             if (response.Data.error != null) Console.WriteLine($"Failed to set charging amps: {response.Data.error}");
             else if (!response.Data.response.result) Console.WriteLine($"Failed to set charging amps: {response.Data.response.reason}");
         }
@@ -208,7 +217,7 @@ namespace TeslaChargingManager
             }
         }
 
-        private static async Task SetChargeLimit(int percentage)
+        internal static async Task SetChargeLimit(int percentage)
         {
             var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/set_charge_limit", Method.POST);
             request.AddJsonBody(new { percent = percentage });
