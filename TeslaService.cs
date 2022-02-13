@@ -13,7 +13,8 @@ namespace TeslaChargingManager
         private static AppSettings appSettings;
         private static RestClient teslaClient;
         private static long vehicleId;
-        internal static ChargeStateModel chargeState;
+        internal static ChargeStateModel? chargeState;
+        private static DateTime chargeStateLastRefreshed;
 
         internal static void Init(AppSettings _appSettings)
         {
@@ -75,7 +76,7 @@ namespace TeslaChargingManager
             if (chargeState.charging_state != ChargingState.Charging)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}");
-                return double.NaN;
+                return chargeState.charging_state == ChargingState.Starting ? 0 : double.NaN;
             }
 
             Console.WriteLine($"Charging at: {chargeState.charger_actual_current} amps");
@@ -140,8 +141,14 @@ namespace TeslaChargingManager
 
         internal static async Task ChargeState()
         {
+            //If charging is stopped don't bother to check for charge state too often, as you can assume the car is not charging
+            if (chargeState?.charging_state == ChargingState.Stopped && chargeStateLastRefreshed.AddMinutes(10) < DateTime.UtcNow)
+            {
+                return;
+            }
             var response = await teslaClient.ExecuteGetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
             chargeState = response.Data.response;
+            chargeStateLastRefreshed = DateTime.UtcNow;
         }
 
         internal static async Task SetVehicleChargingAmps(int amps)
@@ -177,7 +184,7 @@ namespace TeslaChargingManager
         {
             if (chargeState == null) await ChargeState();
 
-            var point = chargeCurve.Points.Where(x => x.SOC > chargeState.battery_level).FirstOrDefault();
+            var point = chargeCurve.Points.First(x => x.SOC > chargeState.battery_level);
 
             return point.Buffer;
         }
@@ -187,13 +194,14 @@ namespace TeslaChargingManager
             var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/charge_start");
             var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
             if (!response.Data.response.result) Console.WriteLine($"Failed to start charging as: {response.Data.response.reason}");
+            chargeState = null;
             return response.Data.response.result;
         }
 
         internal static async Task<VehiclesModel> Vehicles()
         {
-            var vehicles = await teslaClient.GetAsync<Tesla.VehiclesModel>(new RestRequest("/api/1/vehicles"));
-            return vehicles;
+            var response = await teslaClient.ExecuteGetAsync<VehiclesModel>(new RestRequest("/api/1/vehicles"));
+            return response.Data;
         }
 
         internal static void SetVehicleId(long id)

@@ -166,7 +166,7 @@ namespace TeslaChargingManager
 
             if (!await Init()) return;
 
-            var chargeCurve = appSettings.ChargeCurves.FirstOrDefault(x => x.Name == chargeCurveName);
+            var chargeCurve = appSettings.ChargeCurves.FirstOrDefault(x => x.Name.Equals(chargeCurveName, StringComparison.OrdinalIgnoreCase));
             if (chargeCurve == null)
             {
                 Console.WriteLine($"Charge curve {chargeCurveName} not found");
@@ -222,7 +222,7 @@ namespace TeslaChargingManager
             }
 
             var vehicles = await TeslaService.Vehicles();
-            if (vehicles.count == 0)
+            if (vehicles?.count == 0)
             {
                 Console.Write("No Tesla vehicles found");
                 return false;
@@ -242,7 +242,7 @@ namespace TeslaChargingManager
                 var d = CalculateDistance(driveState.location, pulseSite.location);
                 if (d < 100)
                 {
-                    if (driveState.speed != null)
+                    if (driveState.speed != null && driveState.speed > 0)
                     {
                         Console.Write($"Vehicle is moving at speed {driveState.speed}");
                         return false;
@@ -277,11 +277,6 @@ namespace TeslaChargingManager
             var stableDrawDuration = 0;
             var gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
             var sleep = 0;
-
-            //if (gridBuffer == appSettings.GridBufferLowSOC)
-            //{
-            //    Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level} is below minimum of {appSettings.MinimumStateOfCharge}. Low SOC grid buffer is being used");
-            //}
 
             while (true)
             {
@@ -386,7 +381,7 @@ namespace TeslaChargingManager
                 }
                 else statsDuration += seconds;
 
-                sleep = loopDuration - seconds + sleep < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
+                sleep = loopDuration - seconds < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
                 Thread.Sleep((sleep) * 1000);
             }
         }
