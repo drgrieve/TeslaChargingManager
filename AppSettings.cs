@@ -21,7 +21,6 @@ namespace TeslaChargingManager
         //Charging logic
         public int MinLoopSleepDuration { get; set; }
         public int MaxLoopSleepDuration { get; set; }
-        public double GridMaxDraw { get; set; }
         public double GridMaxSustainedDraw { get; set; }
         public int SustainedDrawDuration { get; set; }
         public int NotChargingDuration { get; set; }
@@ -35,6 +34,7 @@ namespace TeslaChargingManager
     public class ChargeCurve
     {
         public string Name { get; set; }
+        public double GridMaxDraw { get; set; }
         public List<ChargePoint> Points { get; set; }
     }
 

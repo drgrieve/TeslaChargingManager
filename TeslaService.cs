@@ -76,6 +76,9 @@ namespace TeslaChargingManager
             if (chargeState.charging_state != ChargingState.Charging)
             {
                 Console.WriteLine($"Charger is: {chargeState.charging_state}");
+
+                if (chargeState.charging_state == ChargingState.Complete) await SetVehicleChargingAmps(appSettings.MinimumChargingAmps);
+
                 return chargeState.charging_state == ChargingState.Starting ? 0 : double.NaN;
             }
 

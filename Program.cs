@@ -36,6 +36,8 @@ namespace TeslaChargingManager
                         Console.WriteLine("/login = Instructions to generate a new Tesla Access token");
                         Console.WriteLine("/charge = Charge vehicle with excess solar");
                         Console.WriteLine("/trip = Charge vehicle for an upcoming trip");
+                        Console.WriteLine("/limit = Set max charge limit");
+                        Console.WriteLine("/amp = Set current charging amps");
                         Console.WriteLine("/quit = Exit program");
                         break;
 
@@ -60,7 +62,6 @@ namespace TeslaChargingManager
                             await Trip(hours, percentage);
                         }
                         break;
-
                     case "/limit":
                         if (options.Length != 2)
                         {
@@ -70,6 +71,17 @@ namespace TeslaChargingManager
                         {
                             var percentage = Convert.ToInt32(options[1]);
                             await Limit(percentage);
+                        }
+                        break;
+                    case "/amps":
+                        if (options.Length != 2)
+                        {
+                            Console.WriteLine("Enter amps. eg /amps 3");
+                        }
+                        else
+                        {
+                            var amps = Convert.ToInt32(options[1]);
+                            await Amps(amps);
                         }
                         break;
                     case "/quit":
@@ -212,6 +224,11 @@ namespace TeslaChargingManager
             PulseService.SiteId = pulseUser.site_ids.First();
             var pulseSite = PulseService.GetSite();
             var pulseData = PulseService.GetLiveSummary();
+            if (pulseData?.weather == null)
+            {
+                Console.WriteLine("Pulse live data is not currently available");
+                return false;
+            }
             Console.WriteLine($"Current conditions is {pulseData.weather.temperature}c and {pulseData.weather.description}");
             Console.WriteLine($"Current solar production is {pulseData.solar}kW");
 
@@ -222,7 +239,7 @@ namespace TeslaChargingManager
             }
 
             var vehicles = await TeslaService.Vehicles();
-            if (vehicles?.count == 0)
+            if (vehicles == null || vehicles.count == 0)
             {
                 Console.Write("No Tesla vehicles found");
                 return false;
@@ -307,9 +324,9 @@ namespace TeslaChargingManager
                     }
                     if (reducedChargeBy == 0)
                     {
-                        if (grid > appSettings.GridMaxDraw && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging && !preventStopCharge)
+                        if (grid > chargeCurve.GridMaxDraw && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging && !preventStopCharge)
                         {
-                            await TeslaService.StopCharging($"grid draw {grid} is over grid draw max of {appSettings.GridMaxDraw}");
+                            await TeslaService.StopCharging($"grid draw {grid} is over grid draw max of {chargeCurve.GridMaxDraw}");
                         }
                         else if (grid > appSettings.GridMaxSustainedDraw && TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging)
                         {
@@ -359,7 +376,10 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Sustained draw {sustainedDrawDuration}/{appSettings.SustainedDrawDuration}");
                 }
 
-                notChargingDuration = TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging ? 0 : notChargingDuration += seconds;
+                if (TeslaService.chargeState != null)
+                {
+                    notChargingDuration = TeslaService.chargeState.charging_state == Tesla.ChargingState.Charging ? 0 : notChargingDuration += seconds;
+                }
                 if (notChargingDuration >= appSettings.NotChargingDuration)
                 {
                     Console.WriteLine($"Not charging duration limit of {appSettings.NotChargingDuration} reached.");
@@ -371,7 +391,7 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Not charging duration {notChargingDuration}/{appSettings.NotChargingDuration}");
                 }
 
-                if (statsDuration >= 600)
+                if (statsDuration >= 600 && TeslaService.chargeState != null)
                 {
                     Console.WriteLine($"Battery level {TeslaService.chargeState.battery_level}/{TeslaService.chargeState.charge_limit_soc}");
                     Console.WriteLine($"Range {Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range)}/{Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range * 100 / TeslaService.chargeState.battery_level)} km");
@@ -392,6 +412,15 @@ namespace TeslaChargingManager
             TeslaService.Init(appSettings);
             await TeslaService.SetChargeLimit(percentage);
             Console.WriteLine($"Charge limit set to {percentage}");
+        }
+
+        private static async Task Amps(int amps)
+        {
+            TeslaService.Init(appSettings);
+            var vehicles = await TeslaService.Vehicles();
+            TeslaService.SetVehicleId(vehicles.response.First().id);
+            await TeslaService.SetVehicleChargingAmps(amps);
+            Console.WriteLine($"Charging amps set to {amps}");
         }
 
         private static void Login()
