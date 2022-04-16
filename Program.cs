@@ -201,7 +201,7 @@ namespace TeslaChargingManager
 
         private static async Task<bool> Init()
         {
-            if (String.IsNullOrEmpty(appSettings.TeslaAccessToken))
+            if (String.IsNullOrEmpty(appSettings.TeslaRefreshToken))
             {
                 Console.WriteLine("No Tesla token. Use /login");
                 return false;
@@ -256,6 +256,11 @@ namespace TeslaChargingManager
                     continue;
                 }
                 var driveState = await TeslaService.DriveState(v.id);
+                if (driveState == null)
+                {
+                    vehicle = v;
+                    break;
+                }
                 var d = CalculateDistance(driveState.location, pulseSite.location);
                 if (d < 100)
                 {
@@ -293,7 +298,6 @@ namespace TeslaChargingManager
             var loopDuration = appSettings.MinLoopSleepDuration;
             var stableDrawDuration = 0;
             var gridBuffer = await TeslaService.GetGridBuffer(chargeCurve);
-            var sleep = 0;
 
             while (true)
             {
@@ -401,7 +405,7 @@ namespace TeslaChargingManager
                 }
                 else statsDuration += seconds;
 
-                sleep = loopDuration - seconds < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
+                var sleep = loopDuration - seconds < appSettings.MinLoopSleepDuration ? appSettings.MinLoopSleepDuration : loopDuration - seconds;
                 Thread.Sleep((sleep) * 1000);
             }
         }

@@ -6,17 +6,21 @@ using System.Threading.Tasks;
 
 namespace TeslaChargingManager.Tesla
 {
-    public class GenericResponse
+    public class GenericResponse : BaseResponse
     {
         public GenericResult response { get; set; }
-        public string error { get; set; }
-        public string error_description { get; set; }
     }
 
     public class GenericResult
     {
         public string reason { get; set; }
         public bool result { get; set; }
+    }
+
+    public class BaseResponse
+    {
+        public string error { get; set; }
+        public string error_description { get; set; }
     }
 
     public class VehicleModel
@@ -100,7 +104,7 @@ namespace TeslaChargingManager.Tesla
         Complete
     }
 
-    public class ChargeStateResponse
+    public class ChargeStateResponse : BaseResponse
     {
         public ChargeStateModel response { get; set; }
     }
@@ -124,7 +128,7 @@ namespace TeslaChargingManager.Tesla
 
     }
 
-    public class VehicleDriveStateResponse
+    public class VehicleDriveStateResponse : BaseResponse
     {
         public VehicleDriveStateModel response { get; set; }
     }

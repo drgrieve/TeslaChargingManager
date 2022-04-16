@@ -10,6 +10,7 @@ namespace TeslaChargingManager
 {
     internal static class TeslaService
     {
+        private static string accessToken;
         private static AppSettings appSettings;
         private static RestClient teslaClient;
         private static long vehicleId;
@@ -21,8 +22,28 @@ namespace TeslaChargingManager
             appSettings = _appSettings;
             if (teslaClient == null)
             {
+                if (accessToken == null)
+                {
+                    var client = new RestClient("https://auth.tesla.com");
+                    var tokenRequest = new RestRequest("oauth2/v3/token", Method.POST);
+                    tokenRequest.AddJsonBody(new
+                    {
+                        grant_type = "refresh_token",
+                        client_id = "ownerapi",
+                        refresh_token = _appSettings.TeslaRefreshToken,
+                        scope = "openid email offline_access"
+                    });
+                    var tokenResponse = client.Execute<TokenResponseModel>(tokenRequest);
+                    if (!tokenResponse.IsSuccessful)
+                    {
+                        Console.WriteLine($"Error: {tokenResponse.ErrorMessage}");
+                        return;
+                    }
+                    accessToken = tokenResponse.Data.access_token;
+                }
+
                 teslaClient = new RestClient("https://owner-api.teslamotors.com");
-                teslaClient.AddDefaultHeader("Authorization", $"Bearer {appSettings.TeslaAccessToken}");
+                teslaClient.AddDefaultHeader("Authorization", $"Bearer {accessToken}");
             }
         }
 
@@ -150,6 +171,7 @@ namespace TeslaChargingManager
                 return;
             }
             var response = await teslaClient.ExecuteGetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
+            if (response.Data.error != null) Console.WriteLine($"Failed to get charge state: {response.Data.error}");
             chargeState = response.Data.response;
             chargeStateLastRefreshed = DateTime.UtcNow;
         }
@@ -204,6 +226,7 @@ namespace TeslaChargingManager
         internal static async Task<VehiclesModel> Vehicles()
         {
             var response = await teslaClient.ExecuteGetAsync<VehiclesModel>(new RestRequest("/api/1/vehicles"));
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) Console.WriteLine($"Unauthorised. Generate a new token using /login command");
             return response.Data;
         }
 
@@ -214,8 +237,12 @@ namespace TeslaChargingManager
 
         internal static async Task<VehicleDriveStateModel> DriveState(long id)
         {
-            var state = await teslaClient.GetAsync<Tesla.VehicleDriveStateResponse>(new RestRequest($"/api/1/vehicles/{id}/data_request/drive_state"));
-            return state.response;
+            var response = await teslaClient.ExecuteGetAsync<Tesla.VehicleDriveStateResponse>(new RestRequest($"/api/1/vehicles/{id}/data_request/drive_state"));
+            if (!String.IsNullOrEmpty(response.Data.error))
+            {
+                Console.WriteLine($"Failed to get drive state {response.Data.error}.");
+            }
+            return response.Data.response;
         }
 
         internal static async Task SetChargeLimitIfLower(int percentage)

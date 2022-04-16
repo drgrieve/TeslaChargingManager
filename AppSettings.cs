@@ -9,7 +9,7 @@ namespace TeslaChargingManager
     public class AppSettings
     {
         //Setup
-        public string TeslaAccessToken { get; set; }
+        public string TeslaRefreshToken { get; set; }
         public string PulseClientId { get; set; }
         public string PulseRefreshToken { get; set; }
         public string PulseUrl { get; set; }
