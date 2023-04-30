@@ -57,7 +57,7 @@ namespace TeslaChargingManager
                         }
                         else
                         {
-                            var hours = Convert.ToInt32(options[1]);
+                            var hours = Convert.ToDouble(options[1]);
                             var percentage = Convert.ToInt32(options[2]);
                             await Trip(hours, percentage);
                         }
@@ -99,7 +99,7 @@ namespace TeslaChargingManager
         private static CancellationTokenSource cts;
         private static bool isInChargingLoop;
         private const double MilesToKilometres = 1.609344;
-        private static async Task Trip(int hours, int percentage)
+        private static async Task Trip(double hours, int percentage)
         {
             Console.WriteLine($"Charging Tesla from Solar for an upcoming trip in {hours} hours with required percentage SOC of {percentage}");
 
@@ -221,8 +221,19 @@ namespace TeslaChargingManager
                 Console.WriteLine("Pulse is not currently available");
                 return false;
             }
-            PulseService.SiteId = pulseUser.site_ids.First();
-            var pulseSite = PulseService.GetSite();
+
+            Pulse.SiteModel? pulseSite = null;
+            if (pulseUser.site_ids == null)
+            {
+                var sites = PulseService.GetSites();
+                pulseSite = sites.data.First();
+                PulseService.SiteId = pulseSite.site_id;
+            }
+            else
+            {
+                PulseService.SiteId = pulseUser.site_ids.First();
+                pulseSite = PulseService.GetSite();
+            }
             var pulseData = PulseService.GetLiveSummary();
             if (pulseData?.weather == null)
             {
@@ -255,7 +266,15 @@ namespace TeslaChargingManager
                     asleep = true;
                     continue;
                 }
-                var driveState = await TeslaService.DriveState(v.id);
+
+                var vehicleDetail = await TeslaService.VehicleDetail(v.id);
+                if (vehicleDetail == null)
+                {
+                    break;
+                }
+
+                var driveState = vehicleDetail.drive_state;
+                //var driveState = await TeslaService.DriveState(v.id);
                 if (driveState == null)
                 {
                     vehicle = v;

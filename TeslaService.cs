@@ -166,14 +166,30 @@ namespace TeslaChargingManager
         internal static async Task ChargeState()
         {
             //If charging is stopped don't bother to check for charge state too often, as you can assume the car is not charging
-            if (chargeState?.charging_state == ChargingState.Stopped && chargeStateLastRefreshed.AddMinutes(10) < DateTime.UtcNow)
+            if (chargeState?.charging_state == ChargingState.Stopped && chargeStateLastRefreshed.AddMinutes(20) > DateTime.UtcNow)
             {
                 return;
             }
-            var response = await teslaClient.ExecuteGetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
-            if (response.Data.error != null) Console.WriteLine($"Failed to get charge state: {response.Data.error}");
-            chargeState = response.Data.response;
+
+            var vehicleDetail = await VehicleDetail(vehicleId);
+            if (vehicleDetail == null) return;
+            chargeState = vehicleDetail.charge_state;
             chargeStateLastRefreshed = DateTime.UtcNow;
+
+            //var response = await teslaClient.ExecuteGetAsync<ChargeStateResponse>(new RestRequest($"api/1/vehicles/{vehicleId}/data_request/charge_state"));
+            //if (!response.IsSuccessful)
+            //{
+            //    Console.WriteLine($"Failed to get charge state: {response.StatusCode}");
+            //    return;
+            //}
+            //if (response.Data.error != null)
+            //{
+            //    if (response.Data.error.Contains("timeout") && chargeState != null)
+            //        return;
+            //    Console.WriteLine($"Failed to get charge state: {response.Data.error}");
+            //}
+            //chargeState = response.Data.response;
+            //chargeStateLastRefreshed = DateTime.UtcNow;
         }
 
         internal static async Task SetVehicleChargingAmps(int amps)
@@ -183,7 +199,7 @@ namespace TeslaChargingManager
             request.AddJsonBody(new { charging_amps = amps });
             var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
             if (response.Data == null) Console.WriteLine($"Failed to set charging amps: {response.Content}");
-            if (response.Data.error != null) Console.WriteLine($"Failed to set charging amps: {response.Data.error}");
+            else if (response.Data.error != null) Console.WriteLine($"Failed to set charging amps: {response.Data.error}");
             else if (!response.Data.response.result) Console.WriteLine($"Failed to set charging amps: {response.Data.response.reason}");
         }
 
@@ -209,6 +225,8 @@ namespace TeslaChargingManager
         {
             if (chargeState == null) await ChargeState();
 
+            if (chargeState == null) return 0;
+
             var point = chargeCurve.Points.First(x => x.SOC > chargeState.battery_level);
 
             return point.Buffer;
@@ -216,10 +234,20 @@ namespace TeslaChargingManager
 
         internal static async Task<bool> StartCharging()
         {
+            chargeState = null;
             var request = new RestRequest($"/api/1/vehicles/{vehicleId}/command/charge_start");
             var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
-            if (!response.Data.response.result) Console.WriteLine($"Failed to start charging as: {response.Data.response.reason}");
-            chargeState = null;
+            if (!String.IsNullOrEmpty(response.Data.error))
+            {
+                Console.WriteLine($"Failed to start charging as: {response.Data.error}");
+                return false;
+            }
+            if (!response.Data.response.result)
+            {
+                if (response.Data.response.reason == "is_charging") return true;
+                Console.WriteLine($"Failed to start charging as: {response.Data.response.reason}");
+                if (response.Data.response.reason == "could_not_wake_buses") return true; //Try again next cycle.
+            }
             return response.Data.response.result;
         }
 
@@ -233,6 +261,31 @@ namespace TeslaChargingManager
         internal static void SetVehicleId(long id)
         {
             vehicleId = id;
+        }
+
+        internal static async Task<VehicleDetailModel> VehicleDetail(long id)
+        {
+            var response = await teslaClient.ExecuteGetAsync<Tesla.VehicleDetailResponse>(new RestRequest($"/api/1/vehicles/{id}/vehicle_data"));
+            if (!String.IsNullOrEmpty(response.Data.error))
+            {
+                if (response.Data.error.Contains("vehicle unavailable"))
+                {
+                    var woken = await WakeVehicle(id);
+                    if (woken) return await VehicleDetail(id);
+                    return null;
+                }
+                Console.WriteLine($"Failed to get vehicle detail {response.Data.error}.");
+            }
+            return response.Data.response;
+        }
+
+        internal static async Task<bool> WakeVehicle(long id)
+        {
+            Console.WriteLine($"Waking vehicle {id}");
+            var request = new RestRequest($"/api/1/vehicles/{id}/wake_up", Method.POST);
+            var response = await teslaClient.ExecutePostAsync<VehicleDetailResponse>(request);
+            Console.WriteLine($"Waking vehicle: state is now {response.Data.response.state}");
+            return response.Data.response.state == "online";
         }
 
         internal static async Task<VehicleDriveStateModel> DriveState(long id)

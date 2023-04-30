@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -47,6 +48,35 @@ namespace TeslaChargingManager.Tesla
         public int count { get; set; }
     }
 
+    public class VehicleDetailResponse : BaseResponse
+    {
+        public VehicleDetailModel response { get; set; }
+    }
+
+    public class VehicleDetailModel
+    {
+        public long id { get; set; }
+        public long user_id { get; set; }
+        public long vehicle_id { get; set; }
+        public string vin { get; set; }
+        public string display_name { get; set; }
+        public object color { get; set; }
+        public string access_type { get; set; }
+        public IList<string> tokens { get; set; }
+        public string state { get; set; }
+        public bool in_service { get; set; }
+        public string id_s { get; set; }
+        public bool calendar_enabled { get; set; }
+        public int api_version { get; set; }
+        public object backseat_token { get; set; }
+        public object backseat_token_updated_at { get; set; }
+        public VehicleDriveStateModel drive_state { get; set; }
+        //public ClimateState climate_state { get; set; }
+        public ChargeStateModel charge_state { get; set; }
+        //public GuiSettings gui_settings { get; set; }
+        //public VehicleState vehicle_state { get; set; }
+        //public VehicleConfig vehicle_config { get; set; }
+    }
 
     public class ChargeStateModel
     {

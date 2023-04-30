@@ -68,6 +68,11 @@ namespace TeslaChargingManager.Pulse
         public Location location => new Location { Latitude = lat, Longitude = lon };
     }
 
+    public class SiteListModel
+    {
+        public List<SiteModel> data { get; set; }
+    }
+
     public class UserModel
     {
         public int user_id { get; set; }

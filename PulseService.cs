@@ -52,15 +52,23 @@ namespace TeslaChargingManager
         internal static UserModel GetUser()
         {
             RefreshAccessToken();
-            var pulseRequest = new RestRequest($"prod/v1/user");
+            var pulseRequest = new RestRequest($"v1/user");
             var pulseResponse = client.Get<UserModel>(pulseRequest);
+            return pulseResponse.Data;
+        }
+
+        internal static SiteListModel GetSites()
+        {
+            RefreshAccessToken();
+            var pulseRequest = new RestRequest($"v1/sites");
+            var pulseResponse = client.Get<SiteListModel>(pulseRequest);
             return pulseResponse.Data;
         }
 
         internal static SiteModel GetSite()
         {
             RefreshAccessToken();
-            var pulseRequest = new RestRequest($"prod/v1/sites/{SiteId}");
+            var pulseRequest = new RestRequest($"v1/sites/{SiteId}");
             var pulseResponse = client.Get<SiteModel>(pulseRequest);
             return pulseResponse.Data;
         }
@@ -68,7 +76,7 @@ namespace TeslaChargingManager
         internal static SummaryModel GetLiveSummary()
         {
             RefreshAccessToken();
-            var pulseRequest = new RestRequest($"prod/v1/sites/{SiteId}/live_data_summary");
+            var pulseRequest = new RestRequest($"v1/sites/{SiteId}/live_data_summary");
             var pulseResponse = client.Get<SummaryModel>(pulseRequest);
             return pulseResponse.Data;
         }
