@@ -23,7 +23,7 @@ namespace TeslaChargingManager
 
             // See https://aka.ms/new-console-template for more information
             Console.WriteLine($"Welcome to Telsa Charging Manager{Environment.NewLine}");
-            Console.WriteLine("Enter a command or /help for instructions");
+            Console.WriteLine("Enter a command or /? for instructions");
             bool quitNow = false;
             while (!quitNow)
             {
@@ -33,11 +33,12 @@ namespace TeslaChargingManager
                 switch (command)
                 {
                     case "/help":
+                    case "/?":
                         Console.WriteLine("/login = Instructions to generate a new Tesla Access token");
                         Console.WriteLine("/charge = Charge vehicle with excess solar");
                         Console.WriteLine("/trip = Charge vehicle for an upcoming trip");
                         Console.WriteLine("/limit = Set max charge limit");
-                        Console.WriteLine("/amp = Set current charging amps");
+                        Console.WriteLine("/amps = Set current charging amps");
                         Console.WriteLine("/quit = Exit program");
                         break;
 
