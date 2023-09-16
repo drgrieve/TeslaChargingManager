@@ -14,6 +14,8 @@ namespace TeslaChargingManager
         private static AppSettings appSettings;
         private static RestClient teslaClient;
         private static long vehicleId;
+        private static string powerwallId;
+        private static long siteId;
         internal static ChargeStateModel? chargeState;
         private static DateTime chargeStateLastRefreshed;
 
@@ -314,5 +316,37 @@ namespace TeslaChargingManager
             request.AddJsonBody(new { percent = percentage });
             var response = await teslaClient.ExecutePostAsync<GenericResponse>(request);
         }
+
+        internal static async Task<ProductsModel> Products()
+        {
+            var response = await teslaClient.ExecuteGetAsync<ProductsModel>(new RestRequest("/api/1/products"));
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) Console.WriteLine($"Unauthorised. Generate a new token using /login command");
+            return response.Data;
+        }
+
+        internal static void SetPowerwallId(string id)
+        {
+            powerwallId = id;
+        }
+
+        internal static async Task<PowerwallDetailModel> PowerwallDetail(string id = null)
+        {
+            id ??= powerwallId;
+            var response = await teslaClient.ExecuteGetAsync<PowerwallDetailResponseModel>(new RestRequest($"/api/1/powerwalls/{id}/status"));
+            return response.Data.Response;
+        }
+
+        internal static void SetSiteId(long id)
+        {
+            siteId = id;
+        }
+
+        internal static async Task<SiteStatusModel> SiteStatus(long? id = null)
+        {
+            id ??= siteId;
+            var response = await teslaClient.ExecuteGetAsync<SiteStatusResponseModel>(new RestRequest($"/api/1/energy_sites/{id}/live_status"));
+            return response.Data.Response;
+        }
+
     }
 }

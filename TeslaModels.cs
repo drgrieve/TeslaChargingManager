@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime;
@@ -163,6 +164,131 @@ namespace TeslaChargingManager.Tesla
         public VehicleDriveStateModel response { get; set; }
     }
 
+    public class ProductsModel
+    {
+        public List<ProductModel> response { get; set; } = new List<ProductModel>();
+        public int count { get; set; }
+    }
 
+    public class ProductModel
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
 
+        [JsonProperty("vehicle_id")]
+        public long VehicleId { get; set; }
+
+        [JsonProperty("display_name")]
+        public string DisplayName { get; set; }
+
+        [JsonProperty("state")]
+        public string State { get; set; }
+
+        [JsonProperty("energy_site_id")]
+        public long? EnergySiteId { get; set; }
+
+        [JsonProperty("resource_type")]
+        public string ResourceType { get; set; }
+
+        [JsonProperty("site_name")]
+        public string SiteName { get; set; }
+
+        [JsonProperty("asset_site_id")]
+        public string AssetSiteId { get; set; }
+
+        [JsonProperty("energy_left")]
+        public double? EnergyLeft { get; set; }
+
+        [JsonProperty("total_pack_energy")]
+        public int? TotalPackEnergy { get; set; }
+
+        [JsonProperty("percentage_charged")]
+        public double? PercentageCharged { get; set; }
+
+        [JsonProperty("battery_type")]
+        public string BatteryType { get; set; }
+
+        [JsonProperty("battery_power")]
+        public int? BatteryPower { get; set; }
+    }
+
+    public class PowerwallDetailResponseModel
+    {
+        [JsonProperty("response")]
+        public PowerwallDetailModel Response { get; set; }
+    }
+
+    public class PowerwallDetailModel
+    {
+        [JsonProperty("site_name")]
+        public string SiteName { get; set; }
+
+        [JsonProperty("energy_left")]
+        public double EnergyLeft { get; set; }
+
+        [JsonProperty("total_pack_energy")]
+        public int TotalPackEnergy { get; set; }
+
+        [JsonProperty("percentage_charged")]
+        public double PercentageCharged { get; set; }
+
+        [JsonProperty("battery_power")]
+        public int BatteryPower { get; set; }
+    }
+
+    public class SiteStatusModel
+    {
+
+        [JsonProperty("solar_power")]
+        public double SolarPower { get; set; }
+
+        [JsonProperty("energy_left")]
+        public int EnergyLeft { get; set; }
+
+        [JsonProperty("total_pack_energy")]
+        public int TotalPackEnergy { get; set; }
+
+        [JsonProperty("percentage_charged")]
+        public double PercentageCharged { get; set; }
+
+        [JsonProperty("battery_power")]
+        public double BatteryPower { get; set; }
+
+        [JsonProperty("load_power")]
+        public double LoadPower { get; set; }
+
+        [JsonProperty("grid_status")]
+        public string GridStatus { get; set; }
+
+        [JsonProperty("grid_services_active")]
+        public bool GridServicesActive { get; set; }
+
+        [JsonProperty("grid_power")]
+        public double GridPower { get; set; }
+
+        [JsonProperty("grid_services_power")]
+        public int GridServicesPower { get; set; }
+
+        [JsonProperty("generator_power")]
+        public int GeneratorPower { get; set; }
+
+        [JsonProperty("island_status")]
+        public string IslandStatus { get; set; }
+
+        [JsonProperty("storm_mode_active")]
+        public bool StormModeActive { get; set; }
+
+        [JsonProperty("timestamp")]
+        public DateTime Timestamp { get; set; }
+
+        [JsonProperty("wall_connectors")]
+        public object WallConnectors { get; set; }
+    }
+
+    public class SiteStatusResponseModel
+    {
+
+        [JsonProperty("response")]
+        public SiteStatusModel Response { get; set; }
+    }
 }

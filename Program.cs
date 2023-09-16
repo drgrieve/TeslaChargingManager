@@ -39,6 +39,7 @@ namespace TeslaChargingManager
                         Console.WriteLine("/trip = Charge vehicle for an upcoming trip");
                         Console.WriteLine("/limit = Set max charge limit");
                         Console.WriteLine("/amps = Set current charging amps");
+                        Console.WriteLine("/stats = See current stats");
                         Console.WriteLine("/quit = Exit program");
                         break;
 
@@ -84,6 +85,9 @@ namespace TeslaChargingManager
                             var amps = Convert.ToInt32(options[1]);
                             await Amps(amps);
                         }
+                        break;
+                    case "/stats":
+                        await Stats();
                         break;
                     case "/quit":
                         quitNow = true;
@@ -207,48 +211,63 @@ namespace TeslaChargingManager
                 Console.WriteLine("No Tesla token. Use /login");
                 return false;
             }
-            if (String.IsNullOrEmpty(appSettings.PulseRefreshToken))
-            {
-                Console.WriteLine("No Pulse token.");
-                return false;
-            }
+            //if (String.IsNullOrEmpty(appSettings.PulseRefreshToken))
+            //{
+            //    Console.WriteLine("No Pulse token.");
+            //    return false;
+            //}
 
             TeslaService.Init(appSettings);
-            PulseService.Init(appSettings);
 
-            var pulseUser = PulseService.GetUser();
-            if (pulseUser.user_id == 0)
+            var products = await TeslaService.Products();
+            foreach (var product in products.response)
             {
-                Console.WriteLine("Pulse is not currently available");
-                return false;
+                Console.WriteLine();
+                if (product.ResourceType == "battery")
+                {
+                    Console.WriteLine($"Powerwall: {product.Id} found");
+
+                    TeslaService.SetPowerwallId(product.Id);
+                    TeslaService.SetSiteId(product.EnergySiteId.Value);
+                }
             }
 
-            Pulse.SiteModel? pulseSite = null;
-            if (pulseUser.site_ids == null)
-            {
-                var sites = PulseService.GetSites();
-                pulseSite = sites.data.First();
-                PulseService.SiteId = pulseSite.site_id;
-            }
-            else
-            {
-                PulseService.SiteId = pulseUser.site_ids.First();
-                pulseSite = PulseService.GetSite();
-            }
-            var pulseData = PulseService.GetLiveSummary();
-            if (pulseData?.weather == null)
-            {
-                Console.WriteLine("Pulse live data is not currently available");
-                return false;
-            }
-            Console.WriteLine($"Current conditions is {pulseData.weather.temperature}c and {pulseData.weather.description}");
-            Console.WriteLine($"Current solar production is {pulseData.solar}kW");
 
-            if (pulseData.solar <= 0 || !pulseData.weather.daytime)
-            {
-                Console.Write($"Solar not currently producing {pulseData.solar} or is night time");
-                return false;
-            }
+            //PulseService.Init(appSettings);
+
+            //var pulseUser = PulseService.GetUser();
+            //if (pulseUser.user_id == 0)
+            //{
+            //    Console.WriteLine("Pulse is not currently available");
+            //    return false;
+            //}
+
+            //Pulse.SiteModel? pulseSite = null;
+            //if (pulseUser.site_ids == null)
+            //{
+            //    var sites = PulseService.GetSites();
+            //    pulseSite = sites.data.First();
+            //    PulseService.SiteId = pulseSite.site_id;
+            //}
+            //else
+            //{
+            //    PulseService.SiteId = pulseUser.site_ids.First();
+            //    pulseSite = PulseService.GetSite();
+            //}
+            //var pulseData = PulseService.GetLiveSummary();
+            //if (pulseData?.weather == null)
+            //{
+            //    Console.WriteLine("Pulse live data is not currently available");
+            //    return false;
+            //}
+            //Console.WriteLine($"Current conditions is {pulseData.weather.temperature}c and {pulseData.weather.description}");
+            //Console.WriteLine($"Current solar production is {pulseData.solar}kW");
+
+            //if (pulseData.solar <= 0 || !pulseData.weather.daytime)
+            //{
+            //    Console.Write($"Solar not currently producing {pulseData.solar} or is night time");
+            //    return false;
+            //}
 
             var vehicles = await TeslaService.Vehicles();
             if (vehicles == null || vehicles.count == 0)
@@ -258,7 +277,6 @@ namespace TeslaChargingManager
             }
 
             Tesla.VehicleModel? vehicle = null;
-            var distance = int.MaxValue;
             var asleep = false;
             foreach (var v in vehicles.response)
             {
@@ -267,37 +285,41 @@ namespace TeslaChargingManager
                     asleep = true;
                     continue;
                 }
+                asleep = false;
 
                 var vehicleDetail = await TeslaService.VehicleDetail(v.id);
                 if (vehicleDetail == null)
                 {
-                    break;
+                    continue;
                 }
 
                 var driveState = vehicleDetail.drive_state;
-                //var driveState = await TeslaService.DriveState(v.id);
                 if (driveState == null)
                 {
-                    vehicle = v;
-                    break;
+                    continue;
                 }
-                var d = CalculateDistance(driveState.location, pulseSite.location);
-                if (d < 100)
+                if (driveState.speed != null && driveState.speed > 0)
                 {
-                    if (driveState.speed != null && driveState.speed > 0)
-                    {
-                        Console.Write($"Vehicle is moving at speed {driveState.speed}");
-                        return false;
-                    }
-                    vehicle = v;
-                    break;
+                    Console.Write($"Vehicle is moving at speed {driveState.speed}");
+                    continue;
                 }
-                if (distance > d) distance = (int)d;
+                vehicle = v;
+                //var d = CalculateDistance(driveState.location, pulseSite.location);
+                //if (d < 100)
+                //{
+                //    if (driveState.speed != null && driveState.speed > 0)
+                //    {
+                //        Console.Write($"Vehicle is moving at speed {driveState.speed}");
+                //        return false;
+                //    }
+                //    vehicle = v;
+                //    break;
+                //}
+                //if (distance > d) distance = (int)d;
             }
             if (vehicle == null)
             {
-                if (asleep == true && distance == int.MaxValue) Console.WriteLine($"No Tesla vehicles found awake.");
-                else Console.WriteLine($"No Tesla vehicles found within 100m of {pulseSite.address}. Closest is {distance}m");
+                if (asleep == true) Console.WriteLine($"No Tesla vehicles found awake.");
                 return false;
             }
 
@@ -323,23 +345,28 @@ namespace TeslaChargingManager
             {
                 if (token.IsCancellationRequested) break;
 
-                var pulseData = PulseService.GetLiveSummary();
-                if (pulseData == null || pulseData.grid == 0 && pulseData.consumption == 0 && pulseData.solar == 0)
-                {
-                    Console.WriteLine($"{DateTime.Now:s} Pulse data not available.");
-                    Thread.Sleep(appSettings.MinLoopSleepDuration);
-                    continue;
-                }
+                //var pulseData = PulseService.GetLiveSummary();
+                //if (pulseData == null || pulseData.grid == 0 && pulseData.consumption == 0 && pulseData.solar == 0)
+                //{
+                //    Console.WriteLine($"{DateTime.Now:s} Pulse data not available.");
+                //    Thread.Sleep(appSettings.MinLoopSleepDuration);
+                //    continue;
+                //}
+                var siteData = await TeslaService.SiteStatus();
 
-                var grid = pulseData.grid;
+                //var grid = pulseData.grid;
+                var grid = (siteData.BatteryPower + siteData.GridPower) / 1000.0;
+                var solar = siteData.SolarPower / 1000.0;
+                var load = siteData.LoadPower / 1000.0;
 
-                Console.WriteLine($"{DateTime.Now:s} Solar:{pulseData.solar:N2} Home:{pulseData.consumption:N2} Grid:{grid:N2} Buffer:{gridBuffer:N2}");
+                //Console.WriteLine($"{DateTime.Now:s} Solar:{pulseData.solar:N2} Home:{pulseData.consumption:N2} Grid:{grid:N2} Buffer:{gridBuffer:N2}");
+                Console.WriteLine($"{DateTime.Now:s} Solar:{solar:N2} Home:{load:N2} Grid:{siteData.GridPower / 1000.0:N2} Battery:{siteData.BatteryPower / 1000.0} Buffer:{gridBuffer:N2}");
 
                 var sustainedDraw = false;
 
                 if (grid + gridBuffer > 0)
                 {
-                    var reducedChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, pulseData.consumption);
+                    var reducedChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, load);
                     if (Double.IsNaN(reducedChargeBy))
                     {
                         Console.WriteLine("Monitor stopped due to failure.");
@@ -363,7 +390,7 @@ namespace TeslaChargingManager
                 }
                 else 
                 {
-                    var increaseChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, pulseData.consumption);
+                    var increaseChargeBy = await TeslaService.ChargeDelta(grid + gridBuffer, load);
                     if (Double.IsNaN(increaseChargeBy))
                     {
                         Console.WriteLine("Monitor stopped due to failure.");
@@ -421,6 +448,7 @@ namespace TeslaChargingManager
                     Console.WriteLine($"Range {Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range)}/{Math.Round(MilesToKilometres * TeslaService.chargeState.ideal_battery_range * 100 / TeslaService.chargeState.battery_level)} km");
                     Console.WriteLine($"Charge added {TeslaService.chargeState.charge_energy_added}kWh");
                     Console.WriteLine($"Time to full charge is {TeslaService.chargeState.time_to_full_charge} hours");
+                    Console.WriteLine($"Powerwall SOC is {siteData.PercentageCharged:N1}");
                     statsDuration = 0;
                 }
                 else statsDuration += seconds;
@@ -447,6 +475,68 @@ namespace TeslaChargingManager
             Console.WriteLine($"Charging amps set to {amps}");
         }
 
+        private static async Task Stats()
+        {
+            TeslaService.Init(appSettings);
+
+            var products = await TeslaService.Products();
+
+            if ((products?.count ?? 0) == 0) 
+            {
+                Console.WriteLine("No products found");
+                return;
+            }
+
+            foreach (var product in products.response)
+            {
+                Console.WriteLine();
+                if (product.VehicleId != 0)
+                {
+                    Console.WriteLine($"Vehicle: {product.DisplayName}");
+                    Console.WriteLine($"State: {product.State}");
+
+                    if (product.State == "online")
+                    {
+                        Console.WriteLine("Fetching vehicle details");
+                        var details = await TeslaService.VehicleDetail(long.Parse(product.Id));
+                        if (details?.charge_state != null)
+                        {
+                            Console.WriteLine($"Charging: {details.charge_state.charging_state}");
+                            Console.WriteLine($"Battery level {details.charge_state.battery_level}/{details.charge_state.charge_limit_soc}");
+                            Console.WriteLine($"Range {Math.Round(MilesToKilometres * details.charge_state.ideal_battery_range)}/{Math.Round(MilesToKilometres * details.charge_state.ideal_battery_range * 100 / details.charge_state.battery_level)} km");
+                        }
+                    }
+                }
+                else if (product.ResourceType == "battery")
+                {
+                    Console.WriteLine($"Powerwall: {product.Id}");
+                    Console.WriteLine($"Site: {product.SiteName}");
+                    if (product.BatteryPower != null)
+                    {
+                        Console.WriteLine("Fetching powerwall details");
+
+                        var details = await TeslaService.PowerwallDetail(product.Id);
+
+                        Console.WriteLine($"State: {(details.BatteryPower < 0 ? "Discharging" : details.BatteryPower == 0 ? "Standby" : "Charging")} {Math.Abs(details.BatteryPower) / 1000.0:N1} kW");
+                        Console.WriteLine($"Actual: {details.EnergyLeft / details.TotalPackEnergy:P2} = {details.EnergyLeft / 1000.0:N1} kW / {details.TotalPackEnergy / 1000.0:N1} kW");
+                        Console.WriteLine($"Usable: {details.PercentageCharged / 100:P2} = {details.PercentageCharged / 100 * 13500 / 1000:N1} kW / {13500 / 1000.0:N1} kW");
+                    }
+
+                    if (product.EnergySiteId != null)
+                    {
+                        Console.WriteLine("Fetching site details");
+
+                        var details = await TeslaService.SiteStatus(product.EnergySiteId);
+
+                        Console.WriteLine($"Load: {details.LoadPower / 1000:N1} kW");
+                        Console.WriteLine($"Solar: {details.SolarPower / 1000:N1} kW");
+                        Console.WriteLine($"Battery: {details.BatteryPower / 1000:N1} kW");
+                        Console.WriteLine($"Grid: {details.GridPower / 1000:N1} kW");
+                    }
+                }
+            }
+
+        }
         private static void Login()
         {
             //Console.WriteLine($"To login you will need to enter your Tesla Email and Password.{Environment.NewLine}A token that is valid for 45 days will be displayed.{Environment.NewLine}Copy and enter this token into the appSettings.json file.");
